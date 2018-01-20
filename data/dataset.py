@@ -1,6 +1,6 @@
 from . import utils
 from .voc_data import VOCBboxDataset
-
+from mxtorch.vision.det.bbox import resize_bbox
 
 class Transform:
     def __init__(self, normalize, min_size=600, max_size=1000):
@@ -20,7 +20,7 @@ class Transform:
         img = utils.resize_img(img)
         r_w, r_h = img.size
         scale = r_w / w
-        bbox = utils.resize_bbox(bbox, (h, w), (r_h, r_w))
+        bbox = resize_bbox(bbox, (h, w), (r_h, r_w))
 
         img, bbox = utils.random_filp(img, bbox)
         img = self.normalize(img)
