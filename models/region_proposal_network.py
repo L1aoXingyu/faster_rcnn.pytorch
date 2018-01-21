@@ -1,6 +1,6 @@
 import numpy as np
 import torch.nn.functional as F
-from mxtorch.vision.det.bbox_tools import generate_anchor_base, _enumerate_shifted_anchor
+from mxtorch.vision.det.bbox_tools import generate_anchor_base, enumerate_shifted_anchor
 from torch import nn
 
 from .utils.creator_tools import ProposalCreator
@@ -36,21 +36,26 @@ class RegionProposalNetwork(nn.Module):
             :class:`model.utils.creator_tools.ProposalCreator`.
 
     .. seealso::
-        :class:`mxtorch.vision.det.creator_tools.ProposalCreator`
+        :class:`~models.utils.creator_tools.ProposalCreator`
 
     """
 
     def __init__(self, in_channels=512, mid_channels=512, ratios=[0.5, 1, 2],
-                 anchor_scale=[8, 16, 32], feat_stride=16,
+                 anchor_scales=[8, 16, 32], feat_stride=16,
                  proposal_creator_params=dict()):
         super(RegionProposalNetwork, self).__init__()
-        self.anchor_base = generate_anchor_base(ratios=ratios, anchor_scales=anchor_scale)
+        # generate anchor base to get anchor box
+        self.anchor_base = generate_anchor_base(ratios=ratios, anchor_scales=anchor_scales)
+        # to do anchor shift
         self.feat_stride = feat_stride
-        self.proposal_layer = ProposalCreator(self, **proposal_creator_params)
+        # from all anchors to choose some, adjust size and loc to get RoIs
+        self.proposal_layer = ProposalCreator(**proposal_creator_params)
         n_anchor = self.anchor_base.shape[0]
 
         self.conv1 = nn.Conv2d(in_channels, mid_channels, 3, 1, 1)
+        # classification score
         self.score = nn.Conv2d(mid_channels, n_anchor * 2, 1, 1, 0)
+        # bbox regression
         self.loc = nn.Conv2d(mid_channels, n_anchor * 4, 1, 1, 0)
         # normalize initialize
         self.normal_init(self.conv1, 0, 0.01)
@@ -111,14 +116,16 @@ class RegionProposalNetwork(nn.Module):
 
         """
         n, _, hh, ww = x.shape
-        anchor = _enumerate_shifted_anchor(np.array(self.anchor_base), self.feat_stride, hh, ww)
-
+        # get all initial anchors which are original coordinates
+        anchor = enumerate_shifted_anchor(np.array(self.anchor_base), self.feat_stride, hh, ww)
+        # base_anchor number to reshape rpn_scores
         n_anchor = anchor.shape[0] // (hh * ww)
+
         h = F.relu(self.conv1(x))
 
         rpn_locs = self.loc(h)
-
         rpn_locs = rpn_locs.permute(0, 2, 3, 1).contiguous().view(n, -1, 4)
+
         rpn_scores = self.score(h)
         rpn_scores = rpn_scores.permute(0, 2, 3, 1).contiguous()
         rpn_fg_scores = rpn_scores.view(n, hh, ww, n_anchor, 2)[:, :, :, :, 1].contiguous()
@@ -127,6 +134,7 @@ class RegionProposalNetwork(nn.Module):
 
         rois = list()
         roi_indices = list()
+        # do for every sample
         for i in range(n):
             roi = self.proposal_layer(
                 rpn_locs[i].cpu().data.numpy(),

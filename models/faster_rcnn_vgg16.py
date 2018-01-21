@@ -1,13 +1,14 @@
 import torch
 from torch import nn
 from torchvision.models import vgg16
-# from model.region_proposal_network import RegionProposalNetwork
-# from model.faster_rcnn import FasterRCNN
+
+from models.faster_rcnn import FasterRCNN
 # from model.roi_module import RoIPooling2D
-# from utils import array_tool as at
+from config import opt
+from models.region_proposal_network import RegionProposalNetwork
 
 
-def decom_vgg16(opt):
+def decom_vgg16():
     # the 30th layer of features is relu of conv5_3
     if opt.caffe_pretrain:
         model = vgg16(pretrained=False)
@@ -33,7 +34,7 @@ def decom_vgg16(opt):
     return nn.Sequential(*features), classifier
 
 
-class FasterRCNNVGG16(nn.Module):
+class FasterRcnnVgg16(FasterRCNN):
     """Faster R-CNN based on VGG-16.
     For descriptions on the interface of this model, please refer to
     :class:`model.faster_rcnn.FasterRCNN`.
@@ -70,7 +71,7 @@ class FasterRCNNVGG16(nn.Module):
             classifier=classifier
         )
 
-        super(FasterRCNNVGG16, self).__init__(
+        super(FasterRcnnVgg16, self).__init__(
             extractor,
             rpn,
             head,

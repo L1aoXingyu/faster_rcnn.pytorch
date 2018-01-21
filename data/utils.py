@@ -42,9 +42,6 @@ def resize_img(img, min_size=600, max_size=1000):
     return img
 
 
-
-
-
 def random_filp(img, bbox):
     """ Random flip image and correspoding to bounding box.
 

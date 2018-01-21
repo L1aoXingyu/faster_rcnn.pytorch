@@ -1,8 +1,29 @@
+__all__ = ['preprocess', 'Dataset', 'TestDataset']
+from mxtorch.vision.det.bbox_tools import resize_bbox
+from PIL import Image
+from config import opt
 from . import utils
 from .voc_data import VOCBboxDataset
-from mxtorch.vision.det.bbox import resize_bbox
 
-class Transform:
+
+def preprocess(img, min_size=600, max_size=1000):
+    """ Preprocess an image for model prediction.
+
+    :param img: (~np.array)
+    :param min_size: min_size of image
+    :param max_size: max_size of image
+    :return: A preprocessed image.
+    """
+    img = Image.fromarray(img)
+    img = utils.resize_img(img, min_size, max_size)
+    if opt.caffe_pretrain:
+        normalize = utils.caffe_normalize
+    else:
+        normalize = utils.pytorch_normalize
+    return normalize(img)
+
+
+class Transform(object):
     def __init__(self, normalize, min_size=600, max_size=1000):
         self.min_size = min_size
         self.max_size = max_size
@@ -27,8 +48,8 @@ class Transform:
         return img, bbox, label, scale
 
 
-class Dataset:
-    def __init__(self, opt):
+class Dataset(object):
+    def __init__(self):
         self.opt = opt
         self.data = VOCBboxDataset(opt.voc_data_path)
         if opt.caffe_pretrain:
@@ -48,7 +69,7 @@ class Dataset:
         return len(self.data)
 
 
-class TestDataset:
+class TestDataset(object):
     def __init__(self, opt, split='test', use_difficult=True):
         self.opt = opt
         self.data = VOCBboxDataset(opt.voc_data_path, split=split, use_difficult=use_difficult)

@@ -8,7 +8,8 @@ class DefaultConfig:
     max_size = 1000
 
     use_drop = False
-
+    lr = 0.1
+    use_adam = True
 
 def parse(self, kwargs):
     '''
