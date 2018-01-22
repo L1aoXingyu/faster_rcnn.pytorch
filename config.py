@@ -1,15 +1,23 @@
 class DefaultConfig:
     model = 'vgg'
     caffe_pretrain = True
-    caffe_pretrain_path = '/home/test/.torch/models/vgg16-00b39a1b.pth'
+    caffe_pretrain_path = '/home/test/sherlock/faster_rcnn/misc/vgg16_caffe.pth'
     voc_data_path = './VOCdevkit/VOC2007/'
+    result_file = 'test.txt'
 
     min_size = 600
     max_size = 1000
 
     use_drop = False
-    lr = 0.1
-    use_adam = True
+    max_epoch = 100
+    lr = 1e-3
+    lr_decay = 0.1
+    lr_decay_freq = 10
+    weight_decay = 5e-4
+    use_adam = False
+    
+    rpn_sigma = 3.
+    roi_sigma = 1.
 
 def parse(self, kwargs):
     '''

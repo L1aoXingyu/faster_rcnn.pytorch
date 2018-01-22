@@ -2,12 +2,13 @@ import torch
 from torch import nn
 from torchvision.models import vgg16
 
-from models.faster_rcnn import FasterRCNN
-# from model.roi_module import RoIPooling2D
 from config import opt
 from models.region_proposal_network import RegionProposalNetwork
+from .faster_rcnn import FasterRCNN
+from .roi_module import RoIPooling2D
 
 
+# get vgg16 model using caffe weight or torch weight
 def decom_vgg16():
     # the 30th layer of features is relu of conv5_3
     if opt.caffe_pretrain:
@@ -34,7 +35,7 @@ def decom_vgg16():
     return nn.Sequential(*features), classifier
 
 
-class FasterRcnnVgg16(FasterRCNN):
+class FasterRCNNVgg16(FasterRCNN):
     """Faster R-CNN based on VGG-16.
     For descriptions on the interface of this model, please refer to
     :class:`model.faster_rcnn.FasterRCNN`.
@@ -71,7 +72,7 @@ class FasterRcnnVgg16(FasterRCNN):
             classifier=classifier
         )
 
-        super(FasterRcnnVgg16, self).__init__(
+        super(FasterRCNNVgg16, self).__init__(
             extractor,
             rpn,
             head,
@@ -123,12 +124,13 @@ class VGG16RoIHead(nn.Module):
                 which bounding boxes correspond to. Its shape is :math:`(R',)`.
         """
         # in case roi_indices is  ndarray
-        roi_indices = at.totensor(roi_indices).float()
-        rois = at.totensor(rois).float()
-        indices_and_rois = t.cat([roi_indices[:, None], rois], dim=1)
+        # roi_indices = torch.from_numpy(roi_indices).float()
+        rois = torch.from_numpy(rois).float().cuda()
+        roi_indices = roi_indices.cuda()
+        indices_and_rois = torch.cat([roi_indices[:, None], rois], dim=1)
         # NOTE: important: yx->xy
         xy_indices_and_rois = indices_and_rois[:, [0, 2, 1, 4, 3]]
-        indices_and_rois = t.autograd.Variable(xy_indices_and_rois.contiguous())
+        indices_and_rois = torch.autograd.Variable(xy_indices_and_rois.contiguous())
 
         pool = self.roi(x, indices_and_rois)
         pool = pool.view(pool.size(0), -1)

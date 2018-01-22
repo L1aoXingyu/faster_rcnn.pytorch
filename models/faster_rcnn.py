@@ -1,13 +1,14 @@
-import torch
-from torch.autograd import Variable
-import numpy as np
-from .utils.nms import non_maximum_suppression
 import cupy as cp
-from data import preprocess
-from torch import nn
-from mxtorch.vision.det.bbox_tools import loc2bbox
-from config import opt
+import numpy as np
+import torch
 import torch.nn.functional as F
+from mxtorch.vision.det.bbox_tools import loc2bbox
+from torch import nn
+from torch.autograd import Variable
+
+from data import preprocess
+from .utils.nms import non_maximum_suppression
+
 
 class FasterRCNN(nn.Module):
     """Base class for Faster R-CNN.
@@ -57,21 +58,22 @@ class FasterRCNN(nn.Module):
             of localization estimates.
 
     """
+
     def __init__(self, extractor, rpn, head,
                  loc_normalize_mean=(0., 0., 0., 0.), loc_normalize_std=(0.1, 0.1, 0.2, 0.2)):
         super(FasterRCNN, self).__init__()
         self.extractor = extractor
         self.rpn = rpn
         self.head = head
-        
+
         self.loc_normalize_mean = loc_normalize_mean
         self.loc_normalize_std = loc_normalize_std
         self.use_present('evaluate')
-        
+
     @property
     def n_class(self):
         return self.head.n_class
-    
+
     def forward(self, x, scale=1.):
         """Forward Faster R-CNN.
 
@@ -110,12 +112,12 @@ class FasterRCNN(nn.Module):
 
         """
         img_size = x.shape[2:]
-        
+
         h = self.extractor(x)
         rpn_locs, rpn_scores, rois, roi_indices, anchor = self.rpn(h, img_size, scale)
         roi_cls_locs, roi_scores = self.head(h, rois, roi_indices)
         return roi_cls_locs, roi_scores, rois, roi_indices
-    
+
     def use_present(self, present):
         """ Use the given present during prediction.
         This method changes values of :obj:`self.nms_thresh` and
@@ -141,7 +143,7 @@ class FasterRCNN(nn.Module):
             self.score_thresh = 0.05
         else:
             raise ValueError('present must be visualize or evaluate')
-        
+
     def _supress(self, raw_cls_bbox, raw_prob):
         bbox = list()
         label = list()
@@ -215,7 +217,7 @@ class FasterRCNN(nn.Module):
             roi = torch.from_numpy(rois) / scale
 
             # Convert predictions to bbox in image coordinates.
-            # Bboxes are scaled to the scale of the input images.
+            # Bounding boxes are scaled to the scale of the input images.
             mean = torch.FloatTensor(self.loc_normalize_mean).cuda().repeat(self.n_class)
             std = torch.FloatTensor(self.loc_normalize_std).cuda().repeat(self.n_class)
 

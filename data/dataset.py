@@ -1,7 +1,8 @@
 __all__ = ['preprocess', 'Dataset', 'TestDataset']
-from mxtorch.vision.det.bbox_tools import resize_bbox
 from PIL import Image
+from mxtorch.vision.det.bbox_tools import resize_bbox
 from config import opt
+
 from . import utils
 from .voc_data import VOCBboxDataset
 
@@ -49,7 +50,7 @@ class Transform(object):
 
 
 class Dataset(object):
-    def __init__(self):
+    def __init__(self, opt):
         self.opt = opt
         self.data = VOCBboxDataset(opt.voc_data_path)
         if opt.caffe_pretrain:

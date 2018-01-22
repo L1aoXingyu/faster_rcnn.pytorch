@@ -1,4 +1,5 @@
 import numpy as np
+import cupy as cp
 from mxtorch.vision.det.bbox_tools import bbox2loc, bbox_iou, loc2bbox
 
 from .nms import non_maximum_suppression
@@ -99,7 +100,7 @@ class ProposalTargetCreator(object):
         pos_roi_per_this_image = int(min(pos_roi_per_image, pos_index.size))
         if pos_index.size > 0:
             pos_index = np.random.choice(
-                pos_index, size=pos_roi_per_image, replace=False
+                pos_index, size=pos_roi_per_this_image, replace=False
             )
 
         neg_index = np.where((max_iou < self.neg_iou_thresh_hi) &
@@ -112,7 +113,7 @@ class ProposalTargetCreator(object):
 
         keep_index = np.append(pos_index, neg_index)
         gt_roi_label = gt_roi_label[keep_index]
-        gt_roi_label[pos_roi_per_image:] = 0
+        gt_roi_label[pos_roi_per_this_image:] = 0
         sample_roi = roi[keep_index]
 
         gt_roi_loc = bbox2loc(sample_roi, bbox[gt_assignment[keep_index]])
@@ -280,6 +281,7 @@ class ProposalCreator(object):
     Region Proposal Networks. NIPS 2015.
 
     Args:
+        parent_model: Oncoming model to decide which mode (train or evaluate)
         nms_thresh (float): Threshold value used when calling NMS.
         n_train_pre_nms (int): Number of top scored bounding boxes
             to keep before passing to NMS in train mode.
@@ -375,9 +377,8 @@ class ProposalCreator(object):
         roi = roi[order, :]
 
         keep = non_maximum_suppression(
-            roi, thresh=self.nms_thresh
+            cp.ascontiguousarray(cp.asarray(roi)), thresh=self.nms_thresh
         )
-
         if n_post_nms > 0:
             keep = keep[:n_post_nms]
         roi = roi[keep]

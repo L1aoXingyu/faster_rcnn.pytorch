@@ -49,7 +49,7 @@ class RegionProposalNetwork(nn.Module):
         # to do anchor shift
         self.feat_stride = feat_stride
         # from all anchors to choose some, adjust size and loc to get RoIs
-        self.proposal_layer = ProposalCreator(**proposal_creator_params)
+        self.proposal_layer = ProposalCreator(self, **proposal_creator_params)
         n_anchor = self.anchor_base.shape[0]
 
         self.conv1 = nn.Conv2d(in_channels, mid_channels, 3, 1, 1)
