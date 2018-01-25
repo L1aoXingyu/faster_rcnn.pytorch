@@ -28,6 +28,7 @@ def resize_img(img, min_size=600, max_size=1000):
     This function is used to resize img, making its large edge less or equal max_size, small edge
     less or equal than min_size.
     There must be one equal.
+
     :param img (~PIL Image): input image
     :param min_size (int): the minimum size
     :param max_size (int): the maximum size

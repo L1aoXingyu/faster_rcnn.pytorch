@@ -1,12 +1,13 @@
-import numpy as np
 import cupy as cp
+import numpy as np
 from mxtorch.vision.det.bbox_tools import bbox2loc, bbox_iou, loc2bbox
 
 from .nms import non_maximum_suppression
 
 
 class ProposalTargetCreator(object):
-    """Assign ground truth bounding boxes to given RoIs.
+    """Assign ground truth bounding boxes to given RoIs, sample 128 pos_sample and 128 neg_sample
+    from almost 2000 RoIs, making them 1:1.
 
     The :meth:`__call__` of this class generates training targets
     for each object proposal.
@@ -86,22 +87,25 @@ class ProposalTargetCreator(object):
 
         """
         n_bbox, _ = bbox.shape
-
+        # Combine roi and bbox to get more accurate region, in case, it can get the gt_bbox luckily.
         roi = np.concatenate((roi, bbox), axis=0)
 
         pos_roi_per_image = np.round(self.n_sample * self.pos_ratio)
-        iou = bbox_iou(roi, bbox)
+        iou = bbox_iou(roi, bbox)  # (R+R', R')
         gt_assignment = iou.argmax(axis=1)
         max_iou = iou.max(axis=1)
 
+        # Offset range of classes from [0, n_fg_class - 1] to [1, n_fg_class].
+        # The label with value 0 is the background.
         gt_roi_label = label[gt_assignment] + 1
 
         pos_index = np.where(max_iou >= self.pos_iou_thresh)[0]
+        # Rois must be minimum of this two numbers.
         pos_roi_per_this_image = int(min(pos_roi_per_image, pos_index.size))
+        # Random choose from all iou >= pos_iou_thresh.
         if pos_index.size > 0:
             pos_index = np.random.choice(
-                pos_index, size=pos_roi_per_this_image, replace=False
-            )
+                pos_index, size=pos_roi_per_this_image, replace=False)
 
         neg_index = np.where((max_iou < self.neg_iou_thresh_hi) &
                              (max_iou >= self.neg_iou_thresh_lo))[0]
@@ -111,19 +115,25 @@ class ProposalTargetCreator(object):
         if neg_index.size > 0:
             neg_index = np.random.choice(neg_index, size=neg_roi_per_this_image, replace=False)
 
+        # The indices that we're selecting (both positive and negative).
         keep_index = np.append(pos_index, neg_index)
+        # Generate ground truth label.
         gt_roi_label = gt_roi_label[keep_index]
         gt_roi_label[pos_roi_per_this_image:] = 0
         sample_roi = roi[keep_index]
 
+        # Compute offsets and scales to match sampled RoIs to the GTs.
         gt_roi_loc = bbox2loc(sample_roi, bbox[gt_assignment[keep_index]])
-        gt_roi_loc = ((gt_roi_loc - np.array(loc_normalize_mean, np.float32)) / np.array(loc_normalize_std, np.float32))
+        # Normalize roi_loc to do preprocess.
+        gt_roi_loc = ((gt_roi_loc - np.array(loc_normalize_mean, np.float32)) /
+                      np.array(loc_normalize_std, np.float32))
 
         return sample_roi, gt_roi_loc, gt_roi_label
 
 
 class AnchorTargetCreator(object):
-    """Assign the ground truth bounding boxes to anchors.
+    """Assign the ground truth bounding boxes to anchors. Make some anchors as positive sample and
+    make some anchors as negative anchors. This is for training RPN.
 
     Assigns the ground truth bounding boxes to anchors for training Region
     Proposal Networks introduced in Faster R-CNN [#]_.
@@ -150,9 +160,9 @@ class AnchorTargetCreator(object):
     def __init__(self, n_sample=256, pos_iou_thresh=0.7, neg_iou_thresh=0.3,
                  pos_ratio=0.5):
         self.n_sample = n_sample
+        self.pos_ratio = pos_ratio
         self.pos_iou_thresh = pos_iou_thresh
         self.neg_iou_thresh = neg_iou_thresh
-        self.pos_ratio = pos_ratio
 
     def __call__(self, bbox, anchor, img_size):
         """Assign ground truth supervision to sampled subset of anchors.
@@ -187,33 +197,35 @@ class AnchorTargetCreator(object):
         img_H, img_W = img_size
 
         n_anchor = len(anchor)
+        # Only choose inside anchors.
         inside_index = _get_inside_index(anchor, img_H, img_W)
         anchor = anchor[inside_index]
-        argmax_ious, label = self._create_label(
-            inside_index, anchor, bbox
-        )
+        argmax_ious, label = self._create_label(inside_index, anchor, bbox)
 
         loc = bbox2loc(anchor, bbox[argmax_ious])
-
+        # Map to all anchors, outside anchors do not contribute to loss.
         label = _unmap(label, n_anchor, inside_index, fill=-1)
         loc = _unmap(loc, n_anchor, inside_index, fill=0)
 
         return loc, label
 
     def _create_label(self, inside_index, anchor, bbox):
+        # Create an empty label for all anchors.
         label = np.empty((len(inside_index),), dtype=np.int32)
+        # Use -1 to initialize all labels.
         label.fill(-1)
 
         argmax_ious, max_ious, gt_argmax_ious = self._calc_ious(anchor, bbox, inside_index)
-
+        # Negative samples if anchor with every gt_bbox iou less than neg_iou_thresh.
         label[max_ious < self.neg_iou_thresh] = 0
-
+        # Positive samples, all anchors with gt_bbox iou = max_iou.
         label[gt_argmax_ious] = 1
-
+        # Positive samples if anchor with every gt_bbox iou more than pos_iou_thresh.
         label[max_ious >= self.pos_iou_thresh] = 1
 
         n_pos = int(self.pos_ratio * self.n_sample)
         pos_index = np.where(label == 1)[0]
+        # Randomly delete some pos samples if pos_index larger than n_pos.
         if len(pos_index) > n_pos:
             disable_index = np.random.choice(
                 pos_index, size=(len(pos_index) - n_pos), replace=False)
@@ -221,20 +233,25 @@ class AnchorTargetCreator(object):
 
         n_neg = self.n_sample - np.sum(label == 1)
         neg_index = np.where(label == 0)[0]
+        # Randomly delete some neg samples if neg_index larger than n_neg.
         if len(neg_index) > n_neg:
             disable_index = np.random.choice(
-                neg_index, size=(len(neg_index) - n_neg), replace=False
-            )
+                neg_index, size=(len(neg_index) - n_neg), replace=False)
             label[disable_index] = -1
 
         return argmax_ious, label
 
     def _calc_ious(self, anchor, bbox, inside_index):
+        """Compute all inside anchors and ground truth bounding boxes IoU.
+        """
         ious = bbox_iou(anchor, bbox)
+        # Get every anchor largest iou bbox.
         argmax_ious = ious.argmax(axis=1)
         max_ious = ious[np.arange(len(inside_index)), argmax_ious]
+        # Get every bbox largest iou anchor.
         gt_argmax_ious = ious.argmax(axis=0)
         gt_max_ious = ious[gt_argmax_ious, np.arange(ious.shape[1])]
+        # Get all anchors which iou = max_iou.
         gt_argmax_ious = np.where(ious == gt_max_ious)[0]
 
         return argmax_ious, max_ious, gt_argmax_ious
@@ -263,7 +280,8 @@ def _get_inside_index(anchor, H, W):
 
 
 class ProposalCreator(object):
-    """Proposal regions are generated by calling this object.
+    """Proposal regions are generated by calling this object. According to scores, sort and get almost
+    2000 (train) or 300 (predict) RoIs.
 
     The :math:`__call__` of this object outputs object detection proposals by
     applying estimated bounding box offsets to a set of anchors.

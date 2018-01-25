@@ -123,17 +123,19 @@ class VGG16RoIHead(nn.Module):
             roi_indices (Tensor): An array containing indices of images to
                 which bounding boxes correspond to. Its shape is :math:`(R',)`.
         """
-        # in case roi_indices is  ndarray
+        # in case roi_indices is ndarray
         # roi_indices = torch.from_numpy(roi_indices).float()
-        rois = torch.from_numpy(rois).float().cuda()
-        roi_indices = roi_indices.cuda()
-        indices_and_rois = torch.cat([roi_indices[:, None], rois], dim=1)
+        rois = torch.from_numpy(rois).float().cuda()  # (R, 4)
+        roi_indices = roi_indices.float().cuda()  # (R, )
+        indices_and_rois = torch.cat([roi_indices[:, None], rois], dim=1)  # (R, 5)
         # NOTE: important: yx->xy
         xy_indices_and_rois = indices_and_rois[:, [0, 2, 1, 4, 3]]
-        indices_and_rois = torch.autograd.Variable(xy_indices_and_rois.contiguous())
+        indices_and_rois = torch.autograd.Variable(xy_indices_and_rois.contiguous())  # on cuda
 
-        pool = self.roi(x, indices_and_rois)
-        pool = pool.view(pool.size(0), -1)
+        # pass to vgg classifier with 512 x 7 x 7 feature map
+        pool = self.roi(x, indices_and_rois)  # (R, 512, 7, 7)
+        # flatten to pass to nn.Linear
+        pool = pool.view(pool.size(0), -1)  # (R, 512*7*7)
         fc7 = self.classifier(pool)
         roi_cls_locs = self.cls_loc(fc7)
         roi_scores = self.score(fc7)

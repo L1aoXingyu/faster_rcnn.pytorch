@@ -128,6 +128,7 @@ class RegionProposalNetwork(nn.Module):
 
         rpn_scores = self.score(h)
         rpn_scores = rpn_scores.permute(0, 2, 3, 1).contiguous()
+        # Get foreground passing to proposal layer get roi.
         rpn_fg_scores = rpn_scores.view(n, hh, ww, n_anchor, 2)[:, :, :, :, 1].contiguous()
         rpn_fg_scores = rpn_fg_scores.view(n, -1)
         rpn_scores = rpn_scores.view(n, -1, 2)
@@ -136,6 +137,7 @@ class RegionProposalNetwork(nn.Module):
         roi_indices = list()
         # do for every sample
         for i in range(n):
+            # choose 2000 rois
             roi = self.proposal_layer(
                 rpn_locs[i].cpu().data.numpy(),
                 rpn_fg_scores[i].cpu().data.numpy(),

@@ -131,7 +131,7 @@ class FasterRCNN(nn.Module):
         them by directly accessing the public attributes.
 
         Args:
-            preset ({'visualize', 'evaluate'): A string to determine the
+            present ({'visualize', 'evaluate'): A string to determine the
                 preset to use.
         
         """
