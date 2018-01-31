@@ -2,12 +2,15 @@ import cupy as cp
 import numpy as np
 import torch
 import torch.nn.functional as F
-from mxtorch.vision.det.bbox_tools import loc2bbox
+from mxtorch.vision.bbox_tools import loc2bbox
 from torch import nn
 from torch.autograd import Variable
 
-from data import preprocess
+from config import opt
+from data.utils import preprocess
 from .utils.nms import non_maximum_suppression
+
+cp.cuda.Device(opt.ctx).use()
 
 
 class FasterRCNN(nn.Module):
@@ -161,12 +164,12 @@ class FasterRCNN(nn.Module):
             # The labels are in [0, self.n_class - 2].
             label.append((l - 1) * np.ones((len(keep),)))
             score.append(prob_l[keep])
-        bbox = np.concatenate(bbox, axis=0).astype(np.flaot32)
+        bbox = np.concatenate(bbox, axis=0).astype(np.float32)
         label = np.concatenate(label, axis=0).astype(np.int32)
         score = np.concatenate(score, axis=0).astype(np.float32)
         return bbox, label, score
 
-    def predict(self, imgs):
+    def predict(self, imgs, sizes=None, visualize=False):
         """Detect objects from images.
 
         This method predicts objects for each image.
@@ -175,6 +178,8 @@ class FasterRCNN(nn.Module):
             imgs (iterable of numpy.ndarray): Arrays holding images.
                 All images are in CHW and RGB format
                 and the range of their value is :math:`[0, 255]`.
+            sizes (iterable of ints) input image sizes.
+            visualize: if use visusalize to show images result.
 
         Returns:
            tuple of lists:
@@ -195,47 +200,55 @@ class FasterRCNN(nn.Module):
 
         """
         self.eval()
-        prepared_imgs = list()
-        sizes = list()
-        for img in imgs:
-            size = img.shape[1:]
-            img = preprocess(img)
-            prepared_imgs.append(img)
-            sizes.append(size)
+        # Visualize a few results getting from origin images.
+        if visualize:
+            self.use_present('visualize')
+            prepared_imgs = list()
+            sizes = list()
+            for img in imgs:
+                size = img.shape[1:]
+                img = preprocess(img)
+                img = torch.from_numpy(img)
+                prepared_imgs.append(img)
+                sizes.append(size)
+        else:
+            prepared_imgs = imgs
 
         bboxes = list()
         labels = list()
         scores = list()
         for img, size in zip(prepared_imgs, sizes):
-            img = torch.from_numpy(img).flaot()
-            img = Variable(img, volatile=True)
+            img = Variable(img[None].cuda(opt.ctx), volatile=True)
             scale = img.shape[3] / size[1]
             roi_cls_loc, roi_scores, rois, _ = self.forward(img, scale=scale)
             # We are assuming that batch size is 1
             roi_score = roi_scores.data
             roi_cls_loc = roi_cls_loc.data
-            roi = torch.from_numpy(rois) / scale
+            roi = torch.from_numpy(rois).cuda(opt.ctx) / scale
 
             # Convert predictions to bbox in image coordinates.
             # Bounding boxes are scaled to the scale of the input images.
-            mean = torch.FloatTensor(self.loc_normalize_mean).cuda().repeat(self.n_class)
-            std = torch.FloatTensor(self.loc_normalize_std).cuda().repeat(self.n_class)
+            mean = torch.FloatTensor(self.loc_normalize_mean).cuda(opt.ctx).repeat(self.n_class)[None]
+            std = torch.FloatTensor(self.loc_normalize_std).cuda(opt.ctx).repeat(self.n_class)[None]
 
             roi_cls_loc = (roi_cls_loc * std + mean)
             roi_cls_loc = roi_cls_loc.view(-1, self.n_class, 4)
             roi = roi.view(-1, 1, 4).expand_as(roi_cls_loc)
-            cls_bbox = loc2bbox(roi.reshape((-1, 4)), roi_cls_loc.reshape((-1, 4)))
+            cls_bbox = loc2bbox(roi.cpu().numpy().reshape((-1, 4)),
+                                roi_cls_loc.cpu().numpy().reshape((-1, 4)))
             cls_bbox = torch.from_numpy(cls_bbox).view(-1, self.n_class * 4)
-            # clip bbox
+            # Clip bbox.
             cls_bbox[:, 0::2] = (cls_bbox[:, 0::2]).clamp(min=0, max=size[0])
             cls_bbox[:, 1::2] = (cls_bbox[:, 1::2]).clamp(min=0, max=size[1])
             raw_cls_bbox = cls_bbox.numpy()
 
-            raw_prob = F.softmax(Variable(roi_score), dim=1).numpy()
+            raw_prob = F.softmax(Variable(roi_score), dim=1).cpu().data.numpy()
 
             bbox, label, score = self._supress(raw_cls_bbox, raw_prob)
             bboxes.append(bbox)
             labels.append(label)
             scores.append(score)
+
+        self.use_present('evaluate')
 
         return bboxes, labels, scores

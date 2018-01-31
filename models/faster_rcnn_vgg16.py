@@ -123,10 +123,12 @@ class VGG16RoIHead(nn.Module):
             roi_indices (Tensor): An array containing indices of images to
                 which bounding boxes correspond to. Its shape is :math:`(R',)`.
         """
-        # in case roi_indices is ndarray
-        # roi_indices = torch.from_numpy(roi_indices).float()
-        rois = torch.from_numpy(rois).float().cuda()  # (R, 4)
-        roi_indices = roi_indices.float().cuda()  # (R, )
+        # In case roi_indices is ndarray.
+        if isinstance(roi_indices, torch._TensorBase):
+            roi_indices = roi_indices.float().cuda(opt.ctx)  # (R, )
+        else:
+            roi_indices = torch.from_numpy(roi_indices).float().cuda(opt.ctx)
+        rois = torch.from_numpy(rois).float().cuda(opt.ctx)  # (R, 4)
         indices_and_rois = torch.cat([roi_indices[:, None], rois], dim=1)  # (R, 5)
         # NOTE: important: yx->xy
         xy_indices_and_rois = indices_and_rois[:, [0, 2, 1, 4, 3]]

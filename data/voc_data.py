@@ -6,7 +6,7 @@ import numpy as np
 from .utils import read_image
 
 
-class VOCBboxDataset:
+class VOCBboxDataset(object):
     """Bounding box dataset for PASCAL `VOC`_.
     .. _`VOC`: http://host.robots.ox.ac.uk/pascal/VOC/voc2012/
     The index corresponds to each image.

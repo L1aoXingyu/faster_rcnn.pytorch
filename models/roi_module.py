@@ -5,6 +5,7 @@ import cupy
 import torch
 from torch.autograd import Function
 
+from config import opt
 from .utils.roi_cupy import kernel_backward, kernel_forward
 
 Stream = namedtuple('Stream', ['ptr'])
@@ -41,8 +42,8 @@ class RoI(Function):
         rois = rois.contiguous()
         self.in_size = B, C, H, W = x.size()
         self.N = N = rois.size(0)
-        output = torch.zeros(N, C, self.outh, self.outw).cuda()
-        self.argmax_data = torch.zeros(N, C, self.outh, self.outw).int().cuda()
+        output = torch.zeros(N, C, self.outh, self.outw).cuda(opt.ctx)
+        self.argmax_data = torch.zeros(N, C, self.outh, self.outw).int().cuda(opt.ctx)
         self.rois = rois
         args = [x.data_ptr(), rois.data_ptr(),
                 output.data_ptr(),
@@ -61,7 +62,7 @@ class RoI(Function):
         ##NOTE: IMPORTANT CONTIGUOUS
         grad_output = grad_output.contiguous()
         B, C, H, W = self.in_size
-        grad_input = torch.zeros(self.in_size).cuda()
+        grad_input = torch.zeros(self.in_size).cuda(opt.ctx)
         stream = Stream(ptr=torch.cuda.current_stream().cuda_stream)
         args = [grad_output.data_ptr(),
                 self.argmax_data.data_ptr(),
@@ -85,7 +86,6 @@ class RoIPooling2D(torch.nn.Module):
 
     def forward(self, x, rois):
         return self.RoI(x, rois)
-
 
 # def test_roi_module():
 #     ## fake data###

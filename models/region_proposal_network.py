@@ -1,6 +1,6 @@
 import numpy as np
 import torch.nn.functional as F
-from mxtorch.vision.det.bbox_tools import generate_anchor_base, enumerate_shifted_anchor
+from mxtorch.vision.bbox_tools import generate_anchor_base, enumerate_shifted_anchor
 from torch import nn
 
 from .utils.creator_tools import ProposalCreator

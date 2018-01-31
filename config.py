@@ -11,7 +11,7 @@ class DefaultConfig(object):
 
     # Visualization parameters.
     vis_dir = './test_vis/'
-    plot_freq = 100
+    plot_freq = 500
 
     # Save frequency and directory.
     save_freq = 1
@@ -20,8 +20,9 @@ class DefaultConfig(object):
     min_size = 600
     max_size = 1000
     # Network hyperparameters.
+    ctx = 1
     use_drop = False
-    max_epoch = 100
+    max_epoch = 14
     lr = 1e-3
     lr_decay = 0.1
     lr_decay_freq = 10
