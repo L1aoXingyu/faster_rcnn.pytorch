@@ -368,19 +368,19 @@ class ProposalCreator(object):
         else:
             n_pre_nms = self.n_test_pre_nms
             n_post_nms = self.n_test_post_nms
-        # get roi based on network output 'loc' and anchor base
+        # Get roi based on network output 'loc' and anchor base.
         roi = loc2bbox(anchor, loc)
 
-        # clip roi coordinate between 0 ~ img_H
+        # Clip roi coordinate between 0 ~ img_H.
         roi[:, slice(0, 4, 2)] = np.clip(
             roi[:, slice(0, 4, 2)], 0, img_size[0]
         )
-        # clip roi coordinate between 0 ~ img_W
+        # Clip roi coordinate between 0 ~ img_W.
         roi[:, slice(1, 4, 2)] = np.clip(
             roi[:, slice(1, 4, 2)], 0, img_size[1]
         )
 
-        # choose roi height and width larger than min_size
+        # Choose roi height and width larger than min_size.
         min_size = self.min_size * scale
         hs = roi[:, 2] - roi[:, 0]
         ws = roi[:, 3] - roi[:, 1]

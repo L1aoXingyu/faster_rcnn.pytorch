@@ -10,7 +10,7 @@ from mxtorch import meter
 from mxtorch.trainer import ScheduledOptim
 from mxtorch.trainer import Trainer
 from mxtorch.vision.eval_tools import eval_detection_voc
-from mxtorch.vision.vis_tools import vis_bbox, fig4board
+from mxtorch.vision.vis_tools import vis_bbox, fig2img
 from torch import nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
@@ -18,7 +18,8 @@ from tqdm import tqdm
 
 import models
 from config import opt
-from data import Dataset, TestDataset, VOC_BBOX_LABEL_NAMES
+from data import CityPersonTrainset, CityPersonTestset, CITYPERSON_BBOX_LABEL_NAMES
+from data import Dataset, TestDataset
 from data.utils import inverse_normalize
 from models.utils.creator_tools import AnchorTargetCreator, ProposalTargetCreator
 
@@ -26,13 +27,6 @@ rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (20480, rlimit[1]))
 
 matplotlib.use('agg')
-
-
-def board_bbox(*args, **kwargs):
-    fig = vis_bbox(*args, **kwargs)
-    data = fig4board(fig)
-    return data
-
 
 LossTuple = namedtuple('LossTuple',
                        ['rpn_loc_loss',
@@ -43,13 +37,23 @@ LossTuple = namedtuple('LossTuple',
                         ])
 
 
-def get_train_data():
+def get_voc_train_data():
     train_set = Dataset()
     return DataLoader(train_set, shuffle=True, num_workers=4)
 
 
-def get_test_data():
+def get_voc_test_data():
     test_set = TestDataset()
+    return DataLoader(test_set, shuffle=True, num_workers=4)
+
+
+def get_cityperson_train_data():
+    train_set = CityPersonTrainset(opt.cityperson_train_img, opt.cityperson_train_annot)
+    return DataLoader(train_set, shuffle=True, num_workers=4)
+
+
+def get_cityperson_test_data():
+    test_set = CityPersonTestset(opt.cityperson_test_img, opt.cityperson_test_annot)
     return DataLoader(test_set, shuffle=True, num_workers=4)
 
 
@@ -95,8 +99,8 @@ def _faster_rcnn_loc_loss(pred_loc, gt_loc, gt_label, sigma):
 
 class FasterRCNNTrainer(Trainer):
     def __init__(self):
-        train_data = get_train_data()
-        test_data = get_test_data()
+        train_data = get_cityperson_train_data()
+        test_data = get_cityperson_test_data()
         faster_rcnn = get_model()
         optimizer = get_optimizer(faster_rcnn)
         super().__init__(train_data, test_data, faster_rcnn, optimizer=optimizer)
@@ -207,37 +211,40 @@ class FasterRCNNTrainer(Trainer):
                 # Add image presentation.
                 # Origin image presentation.
                 ori_img_ = inverse_normalize(imgs[0].data.cpu().numpy())
-                gt_img = board_bbox(ori_img_, bbox.numpy(), label.numpy().reshape(-1), label_names=VOC_BBOX_LABEL_NAMES)
+                fig = vis_bbox(ori_img_, bbox.numpy(), label.numpy().reshape(-1),
+                               label_names=CITYPERSON_BBOX_LABEL_NAMES)
+                gt_img = fig2img(fig)
                 self.writer.add_image('train_gt_img', gt_img, self.n_plot)
 
                 # Predicted image presentation.
                 _bboxes, _labels, _scores = self.model.predict([ori_img_], visualize=True)
-                pred_img = board_bbox(ori_img_, _bboxes[0], _labels[0].reshape(-1), _scores[0], VOC_BBOX_LABEL_NAMES)
+                fig = vis_bbox(ori_img_, _bboxes[0], _labels[0].reshape(-1), _scores[0], CITYPERSON_BBOX_LABEL_NAMES)
+                pred_img = fig2img(fig)
                 self.writer.add_image('train_pred_img', pred_img, self.n_plot)
 
+                # TODO: add rpn_cm and roi_cm images to tensorboard.
                 # Switch to train mode.
                 self.model.train()
                 self.n_plot += 1
             self.n_iter += 1
 
-        train_str = 'Train Loss: {:.4f}'.format(self.loss_meter['total_loss'].value()[0])
-
-        # TODO: add rpn_cm and roi_cm images to tensorboard.
-        return train_str
+        for k in LossTuple._fields:
+            self.metric_log[k] = self.loss_meter[k].value()[0]
 
     def test(self):
         self.model.eval()
 
         pred_bboxes, pred_labels, pred_scores = list(), list(), list()
-        gt_bboxes, gt_labels, gt_difficults = list(), list(), list()
+        gt_bboxes, gt_labels, gt_difficults, gt_resized_bboxes = list(), list(), list(), list()
         ii = 0
-        for imgs, sizes, gt_bboxes_, gt_labels_, gt_difficults_ in tqdm(self.test_data):
+        for imgs, sizes, gt_bboxes_, gt_labels_, gt_difficults_, resized_bbox_ in self.test_data:
             sizes = [sizes[0][0], sizes[1][0]]
             pred_bboxes_, pred_labels_, pred_scores_ = self.model.predict(imgs, [sizes])
 
             gt_bboxes += list(gt_bboxes_.numpy())
             gt_labels += list(gt_labels_.numpy())
             gt_difficults += list(gt_difficults_.numpy())
+            gt_resized_bboxes += list(resized_bbox_.numpy())
 
             pred_bboxes += pred_bboxes_
             pred_labels += pred_labels_
@@ -251,22 +258,24 @@ class FasterRCNNTrainer(Trainer):
 
         # Add to tensorboard.
         self.writer.add_scalar('test_mAP', result['map'], self.n_plot)
-        test_str = ('Test mAP is {:.1f}'.format(result['map']))
+
+        # Update to metric log.
+        self.metric_log['test mAP'] = result['map']
 
         # Add image presentation to tensorboard.
         # Origin image presentation.
         ori_img_ = inverse_normalize(imgs[0].numpy())
-        gt_img = board_bbox(ori_img_, gt_bboxes_[0].numpy(), gt_labels_[0].numpy(),
-                            label_names=VOC_BBOX_LABEL_NAMES)
+        fig = vis_bbox(ori_img_, resized_bbox_[0].numpy(), gt_labels_[0].numpy(),
+                       label_names=CITYPERSON_BBOX_LABEL_NAMES)
+        gt_img = fig2img(fig)
         self.writer.add_image('test_gt_img', gt_img, self.n_plot)
 
         # Predicted image presentation.
         _bboxes, _labels, _scores = self.model.predict([ori_img_], visualize=True)
-        pred_img = board_bbox(ori_img_, _bboxes[0], _labels[0].reshape(-1),
-                              _scores[0], VOC_BBOX_LABEL_NAMES)
+        fig = vis_bbox(ori_img_, _bboxes[0], _labels[0].reshape(-1),
+                       _scores[0], CITYPERSON_BBOX_LABEL_NAMES)
+        pred_img = fig2img(fig)
         self.writer.add_image('test_pred_img', pred_img, self.n_plot)
-
-        return test_str
 
     def reset_meter(self):
         for k, v in self.loss_meter.items():

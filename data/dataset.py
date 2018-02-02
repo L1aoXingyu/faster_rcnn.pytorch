@@ -1,4 +1,4 @@
-__all__ = ['Dataset', 'TestDataset']
+__all__ = ['Dataset', 'TestDataset', 'Transform']
 from mxtorch.vision.bbox_tools import resize_bbox, flip_bbox
 
 from config import opt
@@ -57,8 +57,11 @@ class TestDataset(object):
 
     def __getitem__(self, item):
         ori_img, bbox, label, difficult = self.data.get_example(item)
+        _, h, w = ori_img.shape
         img = utils.preprocess(ori_img)
-        return img, ori_img.shape[1:], bbox, label, difficult
+        _, o_h, o_w = img.shape
+        resized_bbox = resize_bbox(bbox, (h, w), (o_h, o_w))
+        return img, ori_img.shape[1:], bbox, label, difficult, resized_bbox
 
     def __len__(self):
         return len(self.data)

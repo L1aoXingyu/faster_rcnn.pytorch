@@ -58,24 +58,9 @@ class RegionProposalNetwork(nn.Module):
         # bbox regression
         self.loc = nn.Conv2d(mid_channels, n_anchor * 4, 1, 1, 0)
         # normalize initialize
-        self.normal_init(self.conv1, 0, 0.01)
-        self.normal_init(self.score, 0, 0.01)
-        self.normal_init(self.loc, 0, 0.01)
-
-    def normal_init(self, layer, mean, stddev, truncated=False):
-        """ Initialize weight using truncated normal and random normal.
-
-        :param layer: neural network to be initialized
-        :param mean: normal distribution mean
-        :param stddev: normal distribution std
-        :param truncated (bool): if use truncated normal initialize
-        :return: Initialized weight
-        """
-        if truncated:
-            layer.weight.data.normal_().fmod_(2).mul_(stddev).add_(mean)
-        else:
-            layer.weight.data.normal_(mean, stddev)
-            layer.bias.data.zero_()
+        normal_init(self.conv1, 0, 0.01)
+        normal_init(self.score, 0, 0.01)
+        normal_init(self.loc, 0, 0.01)
 
     def forward(self, x, img_size, scale=1.):
         """ Forward Region Proposal Network.
@@ -150,3 +135,19 @@ class RegionProposalNetwork(nn.Module):
         rois = np.concatenate(rois, axis=0)
         roi_indices = np.concatenate(roi_indices, axis=0)
         return rpn_locs, rpn_scores, rois, roi_indices, anchor
+
+
+def normal_init(layer, mean, stddev, truncated=False):
+    """ Initialize weight using truncated normal and random normal.
+
+    :param layer: neural network to be initialized
+    :param mean: normal distribution mean
+    :param stddev: normal distribution std
+    :param truncated (bool): if use truncated normal initialize
+    :return: Initialized weight
+    """
+    if truncated:
+        layer.weight.data.normal_().fmod_(2).mul_(stddev).add_(mean)
+    else:
+        layer.weight.data.normal_(mean, stddev)
+        layer.bias.data.zero_()

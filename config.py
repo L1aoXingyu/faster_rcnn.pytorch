@@ -6,16 +6,24 @@ class DefaultConfig(object):
     model = 'vgg'
     caffe_pretrain = False
     caffe_pretrain_path = '/home/test/sherlock/faster_rcnn/misc/vgg16_caffe.pth'
+    # VOC data dir.
     voc_data_path = './VOCdevkit/VOC2007/'
-    result_file = 'test.txt'
+
+    # CityPerson data dir.
+    cityperson_train_img = './cityscape/leftImg8bit/train/'
+    cityperson_train_annot = './gtBboxCityPersons/train/'
+    cityperson_test_img = './cityscape/leftImg8bit/val/'
+    cityperson_test_annot = './gtBboxCityPersons/val/'
+
+    result_file = 'cityperson.txt'
 
     # Visualization parameters.
-    vis_dir = './test_vis/'
+    vis_dir = './cityperson_vis/'
     plot_freq = 500
 
     # Save frequency and directory.
     save_freq = 1
-    save_file = './test_save'
+    save_file = './cityperson_save'
 
     min_size = 600
     max_size = 1000
