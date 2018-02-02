@@ -58,7 +58,7 @@ def get_cityperson_test_data():
 
 
 def get_model():
-    return models.FasterRCNNVgg16().cuda(opt.ctx)
+    return models.FasterRCNNVgg16(n_fg_class=1, anchor_scales=[2, 4, 8, 16, 32]).cuda(opt.ctx)
 
 
 def get_optimizer(model):
@@ -120,7 +120,7 @@ class FasterRCNNTrainer(Trainer):
 
         # Indicators for training status.
         self.rpn_cm = meter.ConfusionMeter(2)
-        self.roi_cm = meter.ConfusionMeter(21)
+        self.roi_cm = meter.ConfusionMeter(2)
         self.loss_meter = {k: meter.AverageValueMeter() for k in LossTuple._fields}
 
     def train(self):
