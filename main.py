@@ -26,6 +26,7 @@ from models.utils.creator_tools import AnchorTargetCreator, ProposalTargetCreato
 rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (20480, rlimit[1]))
 
+
 matplotlib.use('agg')
 
 LossTuple = namedtuple('LossTuple',
@@ -58,7 +59,10 @@ def get_cityperson_test_data():
 
 
 def get_model():
-    return models.FasterRCNNVgg16(n_fg_class=1, anchor_scales=[2, 4, 8, 16, 32]).cuda(opt.ctx)
+    fine_anchor_ratio = [2.44]
+    fine_anchor_scales = [2.0, 2.7, 3.64, 4.92, 6.64, 8.97, 12.11, 16.34, 22.06, 29.79, 40.21]
+    return models.FasterRCNNVgg16(n_fg_class=1, ratios=fine_anchor_ratio,
+                                  anchor_scales=fine_anchor_scales).cuda()
 
 
 def get_optimizer(model):
@@ -89,9 +93,9 @@ def _smooth_l1_loss(x, t, in_weight, sigma):
 
 
 def _faster_rcnn_loc_loss(pred_loc, gt_loc, gt_label, sigma):
-    in_weight = torch.zeros(gt_loc.shape).cuda(opt.ctx)
+    in_weight = torch.zeros(gt_loc.shape).cuda()
     # Thresh those negative sample, they shouldn't contribute to loss.
-    in_weight[(gt_label > 0).view(-1, 1).expand_as(in_weight).cuda(opt.ctx)] = 1
+    in_weight[(gt_label > 0).view(-1, 1).expand_as(in_weight).cuda()] = 1
     loc_loss = _smooth_l1_loss(pred_loc, gt_loc, Variable(in_weight), sigma)
     loc_loss /= (gt_label >= 0).sum()
     return loc_loss
@@ -99,11 +103,9 @@ def _faster_rcnn_loc_loss(pred_loc, gt_loc, gt_label, sigma):
 
 class FasterRCNNTrainer(Trainer):
     def __init__(self):
-        train_data = get_cityperson_train_data()
-        test_data = get_cityperson_test_data()
         faster_rcnn = get_model()
         optimizer = get_optimizer(faster_rcnn)
-        super().__init__(train_data, test_data, faster_rcnn, optimizer=optimizer)
+        super().__init__(faster_rcnn, optimizer=optimizer)
 
         self.rpn_sigma = opt.rpn_sigma
         self.roi_sigma = opt.roi_sigma
@@ -119,14 +121,15 @@ class FasterRCNNTrainer(Trainer):
         self.class_loss = nn.CrossEntropyLoss()
 
         # Indicators for training status.
-        self.rpn_cm = meter.ConfusionMeter(2)
-        self.roi_cm = meter.ConfusionMeter(2)
-        self.loss_meter = {k: meter.AverageValueMeter() for k in LossTuple._fields}
+        # self.rpn_cm = meter.ConfusionMeter(2)
+        # self.roi_cm = meter.ConfusionMeter(2)
+        for k in LossTuple._fields:
+            self.metric_meter[k] = meter.AverageValueMeter()
 
-    def train(self):
-        self.reset_meter()
+    def train(self, kwargs):
         self.model.train()
-        for data in tqdm(self.train_data):
+        train_data = kwargs['train_data']
+        for data in tqdm(train_data):
             imgs, bboxes, labels, scales = data
             n = bboxes.shape[0]
             if n != 1:
@@ -134,7 +137,7 @@ class FasterRCNNTrainer(Trainer):
             _, _, h, w = imgs.shape
             img_size = (h, w)
 
-            imgs = Variable(imgs.cuda(opt.ctx))
+            imgs = Variable(imgs.cuda())
             features = self.model.extractor(imgs)
             rpn_locs, rpn_scores, rois, roi_indices, anchor = self.model.rpn(features, img_size, scales)
 
@@ -161,30 +164,30 @@ class FasterRCNNTrainer(Trainer):
             # From gt_bbox and all anchors generating anchor labels as RPN label.
             gt_rpn_loc, gt_rpn_label = self.anchor_target_creator(bbox.cpu().numpy(), anchor, img_size)
 
-            gt_rpn_label = Variable(torch.from_numpy(gt_rpn_label).cuda(opt.ctx)).long()
-            gt_rpn_loc = Variable(torch.from_numpy(gt_rpn_loc).cuda(opt.ctx))
+            gt_rpn_label = Variable(torch.from_numpy(gt_rpn_label).cuda()).long()
+            gt_rpn_loc = Variable(torch.from_numpy(gt_rpn_loc).cuda())
             rpn_loc_loss = self.faster_rcnn_loc_loss(rpn_loc, gt_rpn_loc, gt_rpn_label.data, self.rpn_sigma)
 
             rpn_cls_loss = F.cross_entropy(rpn_score, gt_rpn_label, ignore_index=-1)
 
-            _gt_rpn_label = gt_rpn_label[gt_rpn_label > -1]
-            _rpn_score = rpn_score.data.cpu().numpy()[gt_rpn_label.data.cpu().numpy() > -1]
-            self.rpn_cm.add(torch.from_numpy(_rpn_score), _gt_rpn_label.cpu().data.long())
+            # _gt_rpn_label = gt_rpn_label[gt_rpn_label > -1]
+            # _rpn_score = rpn_score.data.cpu().numpy()[gt_rpn_label.data.cpu().numpy() > -1]
+            # self.rpn_cm.add(torch.from_numpy(_rpn_score), _gt_rpn_label.cpu().data.long())
 
             # --------------- RoI losses (fast rcnn loss) ---------
             n_sample = roi_cls_loc.shape[0]
             # Split 84 into 21*4, because there are 21 classes loc.
             roi_cls_loc = roi_cls_loc.view(n_sample, -1, 4)
-            roi_loc = roi_cls_loc[torch.arange(0, n_sample).cuda(opt.ctx).long(),
-                                  torch.from_numpy(gt_roi_label).cuda(opt.ctx).long()]
-            gt_roi_label = Variable(torch.from_numpy(gt_roi_label).cuda(opt.ctx)).long()
-            gt_roi_loc = Variable(torch.from_numpy(gt_roi_loc).cuda(opt.ctx))
+            roi_loc = roi_cls_loc[torch.arange(0, n_sample).cuda().long(),
+                                  torch.from_numpy(gt_roi_label).cuda().long()]
+            gt_roi_label = Variable(torch.from_numpy(gt_roi_label).cuda()).long()
+            gt_roi_loc = Variable(torch.from_numpy(gt_roi_loc).cuda())
 
             roi_loc_loss = self.faster_rcnn_loc_loss(roi_loc.contiguous(), gt_roi_loc, gt_roi_label.data,
                                                      self.roi_sigma)
 
             roi_cls_loss = self.class_loss(roi_score, gt_roi_label)
-            self.roi_cm.add(roi_score.cpu().data, gt_roi_label.cpu().data.long())
+            # self.roi_cm.add(roi_score.cpu().data, gt_roi_label.cpu().data.long())
 
             total_loss = rpn_loc_loss + rpn_cls_loss + roi_loc_loss + roi_cls_loss
 
@@ -198,15 +201,15 @@ class FasterRCNNTrainer(Trainer):
 
             # Update to meter.
             for k, v in all_loss._asdict().items():
-                self.loss_meter[k].add(v.cpu().data[0])
+                self.metric_meter[k].add(v.cpu().data[0])
 
             # Update to tensorboard.
             if (self.n_iter + 1) % opt.plot_freq == 0:
-                self.writer.add_scalar('rpn_loc_loss', self.loss_meter['rpn_loc_loss'].value()[0], self.n_plot)
-                self.writer.add_scalar('rpn_cls_loss', self.loss_meter['rpn_cls_loss'].value()[0], self.n_plot)
-                self.writer.add_scalar('roi_loc_loss', self.loss_meter['roi_loc_loss'].value()[0], self.n_plot)
-                self.writer.add_scalar('roi_cls_loss', self.loss_meter['roi_cls_loss'].value()[0], self.n_plot)
-                self.writer.add_scalar('total_loss', self.loss_meter['total_loss'].value()[0], self.n_plot)
+                self.writer.add_scalar('rpn_loc_loss', self.metric_meter['rpn_loc_loss'].value()[0], self.n_plot)
+                self.writer.add_scalar('rpn_cls_loss', self.metric_meter['rpn_cls_loss'].value()[0], self.n_plot)
+                self.writer.add_scalar('roi_loc_loss', self.metric_meter['roi_loc_loss'].value()[0], self.n_plot)
+                self.writer.add_scalar('roi_cls_loss', self.metric_meter['roi_cls_loss'].value()[0], self.n_plot)
+                self.writer.add_scalar('total_loss', self.metric_meter['total_loss'].value()[0], self.n_plot)
 
                 # Add image presentation.
                 # Origin image presentation.
@@ -222,22 +225,21 @@ class FasterRCNNTrainer(Trainer):
                 pred_img = fig2img(fig)
                 self.writer.add_image('train_pred_img', pred_img, self.n_plot)
 
-                # TODO: add rpn_cm and roi_cm images to tensorboard.
                 # Switch to train mode.
                 self.model.train()
                 self.n_plot += 1
             self.n_iter += 1
 
         for k in LossTuple._fields:
-            self.metric_log[k] = self.loss_meter[k].value()[0]
+            self.metric_log[k] = self.metric_meter[k].value()[0]
 
-    def test(self):
+    def test(self, kwargs):
         self.model.eval()
-
+        test_data = kwargs['test_data']
         pred_bboxes, pred_labels, pred_scores = list(), list(), list()
         gt_bboxes, gt_labels, gt_difficults, gt_resized_bboxes = list(), list(), list(), list()
         ii = 0
-        for imgs, sizes, gt_bboxes_, gt_labels_, gt_difficults_, resized_bbox_ in self.test_data:
+        for imgs, sizes, gt_bboxes_, gt_labels_, gt_difficults_, resized_bbox_ in test_data:
             sizes = [sizes[0][0], sizes[1][0]]
             pred_bboxes_, pred_labels_, pred_scores_ = self.model.predict(imgs, [sizes])
 
@@ -277,17 +279,17 @@ class FasterRCNNTrainer(Trainer):
         pred_img = fig2img(fig)
         self.writer.add_image('test_pred_img', pred_img, self.n_plot)
 
-    def reset_meter(self):
-        for k, v in self.loss_meter.items():
-            v.reset()
-        self.rpn_cm.reset()
-        self.roi_cm.reset()
-
 
 def train(**kwargs):
     opt._parse(kwargs)
+
+    # Set default cuda device.
+    torch.cuda.set_device(opt.ctx)
+
+    train_data = get_cityperson_train_data()
+    test_data = get_cityperson_test_data()
     model_trainer = FasterRCNNTrainer()
-    model_trainer.fit()
+    model_trainer.fit(train_data=train_data, test_data=test_data)
 
 
 if __name__ == '__main__':

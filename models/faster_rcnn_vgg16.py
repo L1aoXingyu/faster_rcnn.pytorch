@@ -7,6 +7,9 @@ from models.region_proposal_network import RegionProposalNetwork
 from .faster_rcnn import FasterRCNN
 from .roi_module import RoIPooling2D
 
+# Set default cuda device.
+torch.cuda.set_device(opt.ctx)
+
 
 # get vgg16 model using caffe weight or torch weight
 def decom_vgg16():
@@ -125,10 +128,10 @@ class VGG16RoIHead(nn.Module):
         """
         # In case roi_indices is ndarray.
         if isinstance(roi_indices, torch._TensorBase):
-            roi_indices = roi_indices.float().cuda(opt.ctx)  # (R, )
+            roi_indices = roi_indices.float().cuda()  # (R, )
         else:
-            roi_indices = torch.from_numpy(roi_indices).float().cuda(opt.ctx)
-        rois = torch.from_numpy(rois).float().cuda(opt.ctx)  # (R, 4)
+            roi_indices = torch.from_numpy(roi_indices).float().cuda()
+        rois = torch.from_numpy(rois).float().cuda()  # (R, 4)
         indices_and_rois = torch.cat([roi_indices[:, None], rois], dim=1)  # (R, 5)
         # NOTE: important: yx->xy
         xy_indices_and_rois = indices_and_rois[:, [0, 2, 1, 4, 3]]
@@ -145,8 +148,8 @@ class VGG16RoIHead(nn.Module):
 
 
 def normal_init(m, mean, stddev, truncated=False):
-    """
-    weight initalizer: truncated normal and random normal.
+    """weight initializer: truncated normal and random normal.
+
     """
     # x is a parameter
     if truncated:

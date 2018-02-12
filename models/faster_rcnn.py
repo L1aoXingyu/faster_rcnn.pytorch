@@ -10,6 +10,8 @@ from config import opt
 from data.utils import preprocess
 from .utils.nms import non_maximum_suppression
 
+# Set default cuda device.
+torch.cuda.set_device(opt.ctx)
 cp.cuda.Device(opt.ctx).use()
 
 
@@ -218,18 +220,18 @@ class FasterRCNN(nn.Module):
         labels = list()
         scores = list()
         for img, size in zip(prepared_imgs, sizes):
-            img = Variable(img[None].cuda(opt.ctx), volatile=True)
+            img = Variable(img[None].cuda(), volatile=True)
             scale = img.shape[3] / size[1]
             roi_cls_loc, roi_scores, rois, _ = self.forward(img, scale=scale)
             # We are assuming that batch size is 1
             roi_score = roi_scores.data
             roi_cls_loc = roi_cls_loc.data
-            roi = torch.from_numpy(rois).cuda(opt.ctx) / scale
+            roi = torch.from_numpy(rois).cuda() / scale
 
             # Convert predictions to bbox in image coordinates.
             # Bounding boxes are scaled to the scale of the input images.
-            mean = torch.FloatTensor(self.loc_normalize_mean).cuda(opt.ctx).repeat(self.n_class)[None]
-            std = torch.FloatTensor(self.loc_normalize_std).cuda(opt.ctx).repeat(self.n_class)[None]
+            mean = torch.FloatTensor(self.loc_normalize_mean).cuda().repeat(self.n_class)[None]
+            std = torch.FloatTensor(self.loc_normalize_std).cuda().repeat(self.n_class)[None]
 
             roi_cls_loc = (roi_cls_loc * std + mean)
             roi_cls_loc = roi_cls_loc.view(-1, self.n_class, 4)

@@ -8,6 +8,9 @@ from torch.autograd import Function
 from config import opt
 from .utils.roi_cupy import kernel_backward, kernel_forward
 
+# Set default cuda device.
+torch.cuda.set_device(opt.ctx)
+
 Stream = namedtuple('Stream', ['ptr'])
 
 
@@ -42,8 +45,8 @@ class RoI(Function):
         rois = rois.contiguous()
         self.in_size = B, C, H, W = x.size()
         self.N = N = rois.size(0)
-        output = torch.zeros(N, C, self.outh, self.outw).cuda(opt.ctx)
-        self.argmax_data = torch.zeros(N, C, self.outh, self.outw).int().cuda(opt.ctx)
+        output = torch.zeros(N, C, self.outh, self.outw).cuda()
+        self.argmax_data = torch.zeros(N, C, self.outh, self.outw).int().cuda()
         self.rois = rois
         args = [x.data_ptr(), rois.data_ptr(),
                 output.data_ptr(),
@@ -62,7 +65,7 @@ class RoI(Function):
         ##NOTE: IMPORTANT CONTIGUOUS
         grad_output = grad_output.contiguous()
         B, C, H, W = self.in_size
-        grad_input = torch.zeros(self.in_size).cuda(opt.ctx)
+        grad_input = torch.zeros(self.in_size).cuda()
         stream = Stream(ptr=torch.cuda.current_stream().cuda_stream)
         args = [grad_output.data_ptr(),
                 self.argmax_data.data_ptr(),

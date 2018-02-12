@@ -15,15 +15,15 @@ class DefaultConfig(object):
     cityperson_test_img = './cityscape/leftImg8bit/val/'
     cityperson_test_annot = './gtBboxCityPersons/val/'
 
-    result_file = 'cityperson.txt'
+    # result_file = 'cityperson.txt'
 
     # Visualization parameters.
-    vis_dir = './cityperson_vis/'
+    # vis_dir = './cityperson_vis/'
     plot_freq = 500
 
     # Save frequency and directory.
-    save_freq = 1
-    save_file = './cityperson_save'
+    # save_freq = 1
+    # save_file = './cityperson_save'
 
     min_size = 600
     max_size = 1000
