@@ -26,16 +26,12 @@ from models.utils.creator_tools import AnchorTargetCreator, ProposalTargetCreato
 rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (20480, rlimit[1]))
 
-
 matplotlib.use('agg')
 
-LossTuple = namedtuple('LossTuple',
-                       ['rpn_loc_loss',
-                        'rpn_cls_loss',
-                        'roi_loc_loss',
-                        'roi_cls_loss',
-                        'total_loss'
-                        ])
+LossTuple = namedtuple('LossTuple', [
+    'rpn_loc_loss', 'rpn_cls_loss', 'roi_loc_loss', 'roi_cls_loss',
+    'total_loss'
+])
 
 
 def get_voc_train_data():
@@ -49,20 +45,26 @@ def get_voc_test_data():
 
 
 def get_cityperson_train_data():
-    train_set = CityPersonTrainset(opt.cityperson_train_img, opt.cityperson_train_annot)
+    train_set = CityPersonTrainset(opt.cityperson_train_img,
+                                   opt.cityperson_train_annot)
     return DataLoader(train_set, shuffle=True, num_workers=4)
 
 
 def get_cityperson_test_data():
-    test_set = CityPersonTestset(opt.cityperson_test_img, opt.cityperson_test_annot)
+    test_set = CityPersonTestset(opt.cityperson_test_img,
+                                 opt.cityperson_test_annot)
     return DataLoader(test_set, shuffle=True, num_workers=4)
 
 
 def get_model():
     fine_anchor_ratio = [2.44]
-    fine_anchor_scales = [2.0, 2.7, 3.64, 4.92, 6.64, 8.97, 12.11, 16.34, 22.06, 29.79, 40.21]
-    return models.FasterRCNNVgg16(n_fg_class=1, ratios=fine_anchor_ratio,
-                                  anchor_scales=fine_anchor_scales).cuda()
+    fine_anchor_scales = [
+        2.0, 2.7, 3.64, 4.92, 6.64, 8.97, 12.11, 16.34, 22.06, 29.79, 40.21
+    ]
+    return models.FasterRCNNVgg16(
+        n_fg_class=1,
+        ratios=fine_anchor_ratio,
+        anchor_scales=fine_anchor_scales).cuda()
 
 
 def get_optimizer(model):
@@ -71,9 +73,17 @@ def get_optimizer(model):
     for key, value in dict(model.named_parameters()).items():
         if value.requires_grad:
             if 'bias' in key:
-                params += [{'params': [value], 'lr': lr * 2, 'weight_decay': 0}]
+                params += [{
+                    'params': [value],
+                    'lr': lr * 2,
+                    'weight_decay': 0
+                }]
             else:
-                params += [{'params': [value], 'lr': lr, 'weight_decay': opt.weight_decay}]
+                params += [{
+                    'params': [value],
+                    'lr': lr,
+                    'weight_decay': opt.weight_decay
+                }]
     if opt.use_adam:
         optimizer = torch.optim.Adam(params)
     else:
@@ -83,12 +93,13 @@ def get_optimizer(model):
 
 
 def _smooth_l1_loss(x, t, in_weight, sigma):
-    sigma2 = sigma ** 2
+    sigma2 = sigma**2
     diff = in_weight * (x - t)
     abs_diff = diff.abs()
     flag = (abs_diff.data < (1. / sigma2)).float()
     flag = Variable(flag)
-    y = (flag * (sigma2 / 2.) * (diff ** 2) + (1 - flag) * (abs_diff - 0.5 / sigma2))
+    y = (flag * (sigma2 / 2.) * (diff**2) + (1 - flag) *
+         (abs_diff - 0.5 / sigma2))
     return y.sum()
 
 
@@ -127,6 +138,7 @@ class FasterRCNNTrainer(Trainer):
             self.metric_meter[k] = meter.AverageValueMeter()
 
     def train(self, kwargs):
+        self.reset_meter()
         self.model.train()
         train_data = kwargs['train_data']
         for data in tqdm(train_data):
@@ -139,7 +151,8 @@ class FasterRCNNTrainer(Trainer):
 
             imgs = Variable(imgs.cuda())
             features = self.model.extractor(imgs)
-            rpn_locs, rpn_scores, rois, roi_indices, anchor = self.model.rpn(features, img_size, scales)
+            rpn_locs, rpn_scores, rois, roi_indices, anchor = self.model.rpn(
+                features, img_size, scales)
 
             # Since batch size is 1, convert variables to singular form to pass in proposal target creator
             bbox = bboxes[0]  # (R, 4)
@@ -152,23 +165,27 @@ class FasterRCNNTrainer(Trainer):
             # negative samples.
             # Break the computation graph of rois, consider then as constant input.
             sample_roi, gt_roi_loc, gt_roi_label = self.proposal_target_creator(
-                roi, bbox.numpy(), label.numpy(),
-                self.loc_normalize_mean, self.loc_normalize_std
-            )
+                roi, bbox.numpy(), label.numpy(), self.loc_normalize_mean,
+                self.loc_normalize_std)
 
             # it's all zeros because now it only support for batch=1
             sample_roi_index = torch.zeros(len(sample_roi)).long()
-            roi_cls_loc, roi_score = self.model.head(features, sample_roi, sample_roi_index)
+            roi_cls_loc, roi_score = self.model.head(features, sample_roi,
+                                                     sample_roi_index)
 
             # ---------------- RPN Losses -----------------
             # From gt_bbox and all anchors generating anchor labels as RPN label.
-            gt_rpn_loc, gt_rpn_label = self.anchor_target_creator(bbox.cpu().numpy(), anchor, img_size)
+            gt_rpn_loc, gt_rpn_label = self.anchor_target_creator(
+                bbox.cpu().numpy(), anchor, img_size)
 
-            gt_rpn_label = Variable(torch.from_numpy(gt_rpn_label).cuda()).long()
+            gt_rpn_label = Variable(
+                torch.from_numpy(gt_rpn_label).cuda()).long()
             gt_rpn_loc = Variable(torch.from_numpy(gt_rpn_loc).cuda())
-            rpn_loc_loss = self.faster_rcnn_loc_loss(rpn_loc, gt_rpn_loc, gt_rpn_label.data, self.rpn_sigma)
+            rpn_loc_loss = self.faster_rcnn_loc_loss(
+                rpn_loc, gt_rpn_loc, gt_rpn_label.data, self.rpn_sigma)
 
-            rpn_cls_loss = F.cross_entropy(rpn_score, gt_rpn_label, ignore_index=-1)
+            rpn_cls_loss = F.cross_entropy(
+                rpn_score, gt_rpn_label, ignore_index=-1)
 
             # _gt_rpn_label = gt_rpn_label[gt_rpn_label > -1]
             # _rpn_score = rpn_score.data.cpu().numpy()[gt_rpn_label.data.cpu().numpy() > -1]
@@ -180,18 +197,23 @@ class FasterRCNNTrainer(Trainer):
             roi_cls_loc = roi_cls_loc.view(n_sample, -1, 4)
             roi_loc = roi_cls_loc[torch.arange(0, n_sample).cuda().long(),
                                   torch.from_numpy(gt_roi_label).cuda().long()]
-            gt_roi_label = Variable(torch.from_numpy(gt_roi_label).cuda()).long()
+            gt_roi_label = Variable(
+                torch.from_numpy(gt_roi_label).cuda()).long()
             gt_roi_loc = Variable(torch.from_numpy(gt_roi_loc).cuda())
 
-            roi_loc_loss = self.faster_rcnn_loc_loss(roi_loc.contiguous(), gt_roi_loc, gt_roi_label.data,
-                                                     self.roi_sigma)
+            roi_loc_loss = self.faster_rcnn_loc_loss(
+                roi_loc.contiguous(), gt_roi_loc, gt_roi_label.data,
+                self.roi_sigma)
 
             roi_cls_loss = self.class_loss(roi_score, gt_roi_label)
             # self.roi_cm.add(roi_score.cpu().data, gt_roi_label.cpu().data.long())
 
             total_loss = rpn_loc_loss + rpn_cls_loss + roi_loc_loss + roi_cls_loss
 
-            losses = [rpn_loc_loss, rpn_cls_loss, roi_loc_loss, roi_cls_loss, total_loss]
+            losses = [
+                rpn_loc_loss, rpn_cls_loss, roi_loc_loss, roi_cls_loss,
+                total_loss
+            ]
             all_loss = LossTuple(*losses)
 
             # Backward.
@@ -205,23 +227,38 @@ class FasterRCNNTrainer(Trainer):
 
             # Update to tensorboard.
             if (self.n_iter + 1) % opt.plot_freq == 0:
-                self.writer.add_scalar('rpn_loc_loss', self.metric_meter['rpn_loc_loss'].value()[0], self.n_plot)
-                self.writer.add_scalar('rpn_cls_loss', self.metric_meter['rpn_cls_loss'].value()[0], self.n_plot)
-                self.writer.add_scalar('roi_loc_loss', self.metric_meter['roi_loc_loss'].value()[0], self.n_plot)
-                self.writer.add_scalar('roi_cls_loss', self.metric_meter['roi_cls_loss'].value()[0], self.n_plot)
-                self.writer.add_scalar('total_loss', self.metric_meter['total_loss'].value()[0], self.n_plot)
+                self.writer.add_scalar(
+                    'rpn_loc_loss',
+                    self.metric_meter['rpn_loc_loss'].value()[0], self.n_plot)
+                self.writer.add_scalar(
+                    'rpn_cls_loss',
+                    self.metric_meter['rpn_cls_loss'].value()[0], self.n_plot)
+                self.writer.add_scalar(
+                    'roi_loc_loss',
+                    self.metric_meter['roi_loc_loss'].value()[0], self.n_plot)
+                self.writer.add_scalar(
+                    'roi_cls_loss',
+                    self.metric_meter['roi_cls_loss'].value()[0], self.n_plot)
+                self.writer.add_scalar(
+                    'total_loss', self.metric_meter['total_loss'].value()[0],
+                    self.n_plot)
 
                 # Add image presentation.
                 # Origin image presentation.
                 ori_img_ = inverse_normalize(imgs[0].data.cpu().numpy())
-                fig = vis_bbox(ori_img_, bbox.numpy(), label.numpy().reshape(-1),
-                               label_names=CITYPERSON_BBOX_LABEL_NAMES)
+                fig = vis_bbox(
+                    ori_img_,
+                    bbox.numpy(),
+                    label.numpy().reshape(-1),
+                    label_names=CITYPERSON_BBOX_LABEL_NAMES)
                 gt_img = fig2img(fig)
                 self.writer.add_image('train_gt_img', gt_img, self.n_plot)
 
                 # Predicted image presentation.
-                _bboxes, _labels, _scores = self.model.predict([ori_img_], visualize=True)
-                fig = vis_bbox(ori_img_, _bboxes[0], _labels[0].reshape(-1), _scores[0], CITYPERSON_BBOX_LABEL_NAMES)
+                _bboxes, _labels, _scores = self.model.predict(
+                    [ori_img_], visualize=True)
+                fig = vis_bbox(ori_img_, _bboxes[0], _labels[0].reshape(-1),
+                               _scores[0], CITYPERSON_BBOX_LABEL_NAMES)
                 pred_img = fig2img(fig)
                 self.writer.add_image('train_pred_img', pred_img, self.n_plot)
 
@@ -234,14 +271,17 @@ class FasterRCNNTrainer(Trainer):
             self.metric_log[k] = self.metric_meter[k].value()[0]
 
     def test(self, kwargs):
+        self.reset_meter()
         self.model.eval()
         test_data = kwargs['test_data']
         pred_bboxes, pred_labels, pred_scores = list(), list(), list()
-        gt_bboxes, gt_labels, gt_difficults, gt_resized_bboxes = list(), list(), list(), list()
+        gt_bboxes, gt_labels, gt_difficults, gt_resized_bboxes = list(), list(
+        ), list(), list()
         ii = 0
         for imgs, sizes, gt_bboxes_, gt_labels_, gt_difficults_, resized_bbox_ in test_data:
             sizes = [sizes[0][0], sizes[1][0]]
-            pred_bboxes_, pred_labels_, pred_scores_ = self.model.predict(imgs, [sizes])
+            pred_bboxes_, pred_labels_, pred_scores_ = self.model.predict(
+                imgs, [sizes])
 
             gt_bboxes += list(gt_bboxes_.numpy())
             gt_labels += list(gt_labels_.numpy())
@@ -255,8 +295,14 @@ class FasterRCNNTrainer(Trainer):
             if ii == 1000:
                 break
             ii += 1
-        result = eval_detection_voc(pred_bboxes, pred_labels, pred_scores,
-                                    gt_bboxes, gt_labels, gt_difficults, use_07_metric=True)
+        result = eval_detection_voc(
+            pred_bboxes,
+            pred_labels,
+            pred_scores,
+            gt_bboxes,
+            gt_labels,
+            gt_difficults,
+            use_07_metric=True)
 
         # Add to tensorboard.
         self.writer.add_scalar('test_mAP', result['map'], self.n_plot)
@@ -267,13 +313,17 @@ class FasterRCNNTrainer(Trainer):
         # Add image presentation to tensorboard.
         # Origin image presentation.
         ori_img_ = inverse_normalize(imgs[0].numpy())
-        fig = vis_bbox(ori_img_, resized_bbox_[0].numpy(), gt_labels_[0].numpy(),
-                       label_names=CITYPERSON_BBOX_LABEL_NAMES)
+        fig = vis_bbox(
+            ori_img_,
+            resized_bbox_[0].numpy(),
+            gt_labels_[0].numpy(),
+            label_names=CITYPERSON_BBOX_LABEL_NAMES)
         gt_img = fig2img(fig)
         self.writer.add_image('test_gt_img', gt_img, self.n_plot)
 
         # Predicted image presentation.
-        _bboxes, _labels, _scores = self.model.predict([ori_img_], visualize=True)
+        _bboxes, _labels, _scores = self.model.predict(
+            [ori_img_], visualize=True)
         fig = vis_bbox(ori_img_, _bboxes[0], _labels[0].reshape(-1),
                        _scores[0], CITYPERSON_BBOX_LABEL_NAMES)
         pred_img = fig2img(fig)
